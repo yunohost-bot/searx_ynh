@@ -24,17 +24,13 @@ Installation is discouraged.
 SearXNG is a potential alternative, already packaged for YunoHost.
 
 
-**Version incluse :** 1.1.0~ynh2
+**Version incluse :** 1.1.0~ynh3
 
 **Démo :** https://demo.yunohost.org/searx/
 
 ## Captures d’écran
 
 ![Capture d’écran de Searx](./doc/screenshots/Screenshot.png)
-
-## :red_circle: Fonctions indésirables
-
-- **Upstream not maintained**: This software is not maintained anymore. Expect it to break down over time, be exposed to unfixed security breaches, etc.
 
 ## :red_circle: Fonctions indésirables
 
