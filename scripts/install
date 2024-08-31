@@ -1,80 +1,70 @@
 #!/bin/bash
 
-#=================================================
-# GENERIC START
-#=================================================
-# IMPORT GENERIC HELPERS
-#=================================================
-
 source _common.sh
 source /usr/share/yunohost/helpers
 
 #=================================================
 # DOWNLOAD, CHECK AND UNPACK SOURCE
 #=================================================
-ynh_script_progression --message="Setting up source files..." --weight=2
+ynh_script_progression "Setting up source files..."
 
 # Download, check integrity, uncompress and patch the source from app.src
 ynh_setup_source --dest_dir="$install_dir/source"
 
-chmod -R o-rwx "$install_dir"
-chown -R "$app:" "$install_dir"
-
+#REMOVEME? Assuming the install dir is setup using ynh_setup_source, the proper chmod/chowns are now already applied and it shouldn't be necessary to tweak perms | chmod -R o-rwx "$install_dir"
+#REMOVEME? Assuming the install dir is setup using ynh_setup_source, the proper chmod/chowns are now already applied and it shouldn't be necessary to tweak perms | chown -R "$app:" "$install_dir"
 #=================================================
 # NGINX CONFIGURATION
 #=================================================
-ynh_script_progression --message="Configuring NGINX web server..." --weight=2
+ynh_script_progression "Configuring NGINX web server..."
 
 path_no_root=${path%/}
 # Create a dedicated NGINX config
-ynh_add_nginx_config "path_no_root"
+ynh_config_add_nginx "path_no_root"
 
 #=================================================
 # SPECIFIC SETUP
 #=================================================
 # INSTALL SEARX IN A VIRTUALENV
 #=================================================
-ynh_script_progression --message="Installing Searx..." --weight=2
+ynh_script_progression "Installing Searx..."
 
 _searx_venv_install
 
-ynh_add_config --template="requirements-ynh.txt" --destination="$install_dir/requirements-ynh.txt"
+ynh_config_add --template="requirements-ynh.txt" --destination="$install_dir/requirements-ynh.txt"
 
-ynh_exec_as "$app" "$venvpy" -m pip install --requirement "$install_dir/requirements-ynh.txt" --no-cache-dir
+ynh_exec_as_app "$venvpy" -m pip install --requirement "$install_dir/requirements-ynh.txt" --no-cache-dir
 
 #=================================================
 # CONFIGURE SEARX
 #=================================================
-ynh_script_progression --message="Configuring Searx..." --weight=2
+ynh_script_progression "Configuring Searx..."
 
 secret_key=$(ynh_string_random)
-ynh_add_config --template="settings.yml" --destination="$install_dir/source/searx/settings.yml"
+ynh_config_add --template="settings.yml" --destination="$install_dir/source/searx/settings.yml"
 
 #=================================================
 # SET PERMISSIONS ON SEARX DIRECTORY
 #=================================================
 
-chown -R "$app:" "$install_dir"
-
+#REMOVEME? Assuming the install dir is setup using ynh_setup_source, the proper chmod/chowns are now already applied and it shouldn't be necessary to tweak perms | chown -R "$app:" "$install_dir"
 #=================================================
 # CONFIGURE UWSGI FOR SEARX
 #=================================================
-ynh_script_progression --message="Configuring uWSGI for Searx..." --weight=2
+ynh_script_progression "Configuring uWSGI for Searx..."
 
 ynh_add_uwsgi_service
 
 #=================================================
-# GENERIC FINALIZATION
-#=================================================
 # START SYSTEMD SERVICE
 #=================================================
-ynh_script_progression --message="Starting a systemd service..." --weight=4
+ynh_script_progression "Starting $app's systemd service..."
 
 # Start a systemd service
-ynh_systemd_action --service_name="uwsgi-app@$app.service" --action=start --line_match="spawned uWSGI master process" --log_path="/var/log/uwsgi/$app/$app.log"
+ynh_systemctl --service="uwsgi-app@$app.service" --action=start --wait_until="spawned uWSGI master process" --log_path="/var/log/uwsgi/$app/$app.log"
 
 #=================================================
 # END OF SCRIPT
 #=================================================
 
-ynh_script_progression --message="Installation of $app completed" --last
+ynh_script_progression "Installation of $app completed"

@@ -1,20 +1,16 @@
 #!/bin/bash
 
 #=================================================
-# COMMON VARIABLES
-#=================================================
-
-#=================================================
-# PERSONAL HELPERS
+# COMMON VARIABLES AND CUSTOM HELPERS
 #=================================================
 
 _searx_venv_install() {
-    ynh_exec_as "$app" python3 -m venv --upgrade "$install_dir/venv"
+    ynh_exec_as_app python3 -m venv --upgrade "$install_dir/venv"
     venvpy="$install_dir/venv/bin/python3"
 
-    ynh_exec_as "$app" "$venvpy" -m pip install --upgrade --no-cache-dir pip
+    ynh_exec_as_app "$venvpy" -m pip install --upgrade --no-cache-dir pip
 
-    ynh_exec_as "$app" "$venvpy" -m pip install setuptools wheel pyyaml
+    ynh_exec_as_app "$venvpy" -m pip install setuptools wheel pyyaml
 }
 
 #=================================================
@@ -25,7 +21,7 @@ _searx_venv_install() {
 #
 # usage: ynh_check_global_uwsgi_config
 ynh_check_global_uwsgi_config () {
-    uwsgi --version || ynh_die --message "You need to add uwsgi (and appropriate plugin) as a dependency"
+    uwsgi --version || ynh_die  "You need to add uwsgi (and appropriate plugin) as a dependency"
 
     cat > /etc/systemd/system/uwsgi-app@.service <<EOF
 [Unit]
@@ -81,7 +77,7 @@ ynh_add_uwsgi_service () {
     local finaluwsgiini="/etc/uwsgi/apps-available/$app.ini"
 
     # www-data group is needed since it is this nginx who will start the service
-    usermod --append --groups www-data "$app" || ynh_die --message "It wasn't possible to add user $app to group www-data"
+    usermod --append --groups www-data "$app" || ynh_die  "It wasn't possible to add user $app to group www-data"
 
     ynh_backup_if_checksum_is_different "$finaluwsgiini"
     cp ../conf/uwsgi.ini "$finaluwsgiini"
@@ -89,13 +85,13 @@ ynh_add_uwsgi_service () {
     # To avoid a break by set -u, use a void substitution ${var:-}. If the variable is not set, it's simply set with an empty variable.
     # Substitute in a nginx config file only if the variable is not empty
     if test -n "${install_dir:-}"; then
-        ynh_replace_string --match_string "__INSTALL_DIR__" --replace_string "$install_dir" --target_file "$finaluwsgiini"
+        ynh_replace --match "__INSTALL_DIR__" --replace "$install_dir" --file "$finaluwsgiini"
     fi
     if test -n "${path:-}"; then
-        ynh_replace_string --match_string "__PATH__" --replace_string "$path" --target_file "$finaluwsgiini"
+        ynh_replace --match "__PATH__" --replace "$path" --file "$finaluwsgiini"
     fi
     if test -n "${app:-}"; then
-        ynh_replace_string --match_string "__APP__" --replace_string "$app" --target_file "$finaluwsgiini"
+        ynh_replace --match "__APP__" --replace "$app" --file "$finaluwsgiini"
     fi
 
     # Replace all other variable given as arguments
@@ -103,10 +99,10 @@ ynh_add_uwsgi_service () {
     do
         # ${var_to_replace^^} make the content of the variable on upper-cases
         # ${!var_to_replace} get the content of the variable named $var_to_replace
-        ynh_replace_string --match_string "__${var_to_replace^^}__" --replace_string "${!var_to_replace}" --target_file "$finaluwsgiini"
+        ynh_replace --match "__${var_to_replace^^}__" --replace "${!var_to_replace}" --file "$finaluwsgiini"
     done
 
-    ynh_store_file_checksum --file "$finaluwsgiini"
+    ynh_store_file_checksum  "$finaluwsgiini"
 
     chown $app:root "$finaluwsgiini"
 
@@ -136,23 +132,22 @@ ynh_remove_uwsgi_service () {
         yunohost service remove "uwsgi-app@$app"
         systemctl disable "uwsgi-app@$app.service" --quiet
 
-        ynh_secure_remove --file="$finaluwsgiini"
-        ynh_secure_remove --file="/var/log/uwsgi/$app"
-        ynh_secure_remove --file="/etc/systemd/system/uwsgi-app@$app.service.d"
+        ynh_safe_rm "$finaluwsgiini"
+        ynh_safe_rm "/var/log/uwsgi/$app"
+        ynh_safe_rm "/etc/systemd/system/uwsgi-app@$app.service.d"
     fi
     if [ -e /etc/init.d/uwsgi ]
     then
 	    # Redémarre le service uwsgi si il n'est pas désinstallé.
-	    ynh_systemd_action --service_name=uwsgi --action=start
+	    ynh_systemctl --service=uwsgi --action=start
     else
 	    if yunohost service status | grep -q uwsgi
 	    then
-		    ynh_print_info --message="Remove uwsgi service"
+		    ynh_print_info "Remove uwsgi service"
 		    yunohost service remove uwsgi
 	    fi
     fi
 }
-
 
 #=================================================
 
@@ -167,7 +162,7 @@ ynh_remove_uwsgi_service () {
 # Requires YunoHost version 2.6.4 or higher.
 ynh_regex_secure_remove () {
     # Declare an array to define the options of this helper.
-    local legacy_args=frnd
+    #REMOVEME? local legacy_args=frnd
     declare -Ar args_array=( [f]=file= [r]=regex= [n]=non_recursive [d]=dry_run )
     local file
     local regex
@@ -186,7 +181,7 @@ ynh_regex_secure_remove () {
     # Fail if no argument is provided to the helper.
     if [ -z "$file" ]
     then
-        ynh_print_warn --message="ynh_regex_secure_remove called with no argument --file, ignoring."
+        ynh_print_warn "ynh_regex_secure_remove called with no argument --file, ignoring."
         return 0
     fi
 
@@ -202,7 +197,7 @@ ynh_regex_secure_remove () {
             # Use find to list the files in $file and grep to filter with the regex
             files_to_remove="$(find -P "$file" $recursive -name ".." -prune -o -print | grep --extended-regexp "$regex")"
         else
-            ynh_print_info --message="'$file' wasn't deleted because it doesn't exist."
+            ynh_print_info "'$file' wasn't deleted because it doesn't exist."
             return 0
         fi
     else
@@ -222,14 +217,14 @@ ynh_regex_secure_remove () {
                 # Match if the path finishes by /. Because it seems there is an empty variable
                 [ "${file_to_remove:${#file_to_remove}-1}" = "/" ]
             then
-                ynh_print_err --message="Not deleting '$file_to_remove' because this path is forbidden !!!"
+                ynh_print_warn "Not deleting '$file_to_remove' because this path is forbidden !!!"
 
             # If the file to remove exists
             elif [ -e "$file_to_remove" ]
             then
                 if [ $dry_run -eq 1 ]
                 then
-                    ynh_print_warn --message="File to remove: $file_to_remove"
+                    ynh_print_warn "File to remove: $file_to_remove"
                 else
                     if [ $non_recursive -eq 1 ]; then
                         local recursive=""
@@ -244,7 +239,7 @@ ynh_regex_secure_remove () {
                 # Ignore non existent files with regex, as we likely remove the parent directory before its content is listed.
                 if [ -z "$regex" ]
                 then
-                    ynh_print_info --message="'$file_to_remove' wasn't deleted because it doesn't exist."
+                    ynh_print_info "'$file_to_remove' wasn't deleted because it doesn't exist."
                 fi
             fi
         fi

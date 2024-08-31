@@ -1,95 +1,82 @@
 #!/bin/bash
 
-#=================================================
-# GENERIC START
-#=================================================
-# IMPORT GENERIC HELPERS
-#=================================================
-
 source _common.sh
 source /usr/share/yunohost/helpers
 
 #=================================================
-# STANDARD UPGRADE STEPS
-#=================================================
 # ENSURE DOWNWARD COMPATIBILITY
 #=================================================
-ynh_script_progression --message="Ensuring downward compatibility..."
+ynh_script_progression "Ensuring downward compatibility..."
 
 if [ -f "$install_dir/setup.py" ]; then
     # Clean up the whole install_dir except settings.yml
     tmpdir="$(mktemp -d)"
     cp "$install_dir/searx/settings.yml" "$tmpdir"
-    ynh_secure_remove "$install_dir"
+    ynh_safe_rm "$install_dir"
     mkdir -p "$install_dir"
-    chmod 750 "$install_dir"
-    chown "$app:" "$install_dir"
+    #REMOVEME? Assuming the install dir is setup using ynh_setup_source, the proper chmod/chowns are now already applied and it shouldn't be necessary to tweak perms | chmod 750 "$install_dir"
+    #REMOVEME? Assuming the install dir is setup using ynh_setup_source, the proper chmod/chowns are now already applied and it shouldn't be necessary to tweak perms | chown "$app:" "$install_dir"
     mkdir -p "$install_dir/source/searx"
     cp "$tmpdir/settings.yml" "$install_dir/source/searx"
-    ynh_secure_remove --file="$tmpdir"
+    ynh_safe_rm "$tmpdir"
 fi
-
 
 #=================================================
 # DOWNLOAD, CHECK AND UNPACK SOURCE
 #=================================================
-ynh_script_progression --message="Upgrading source files..." --weight=3
+ynh_script_progression "Upgrading source files..."
 
 # Download, check integrity, uncompress and patch the source from app.src
-ynh_setup_source --dest_dir="$install_dir/source" --full_replace=1 --keep="searx/settings.yml"
+ynh_setup_source --dest_dir="$install_dir/source" --full_replace --keep="searx/settings.yml"
 
 #=================================================
 # REAPPLY SYSTEM CONFIGURATIONS
 #=================================================
-ynh_script_progression --message="Upgrading system configurations related to $app..." --weight=1
+ynh_script_progression "Upgrading system configurations related to $app..."
 
 path_no_root=${path%/}
 # Create a dedicated NGINX config
-ynh_add_nginx_config "path_no_root"
+ynh_config_add_nginx "path_no_root"
 
-#=================================================
-# SPECIFIC UPGRADE
 #=================================================
 # UPGRADE SEARX IN ITS VIRTUALENV
 #=================================================
-ynh_script_progression --message="Upgrading Searx..." --weight=7
+ynh_script_progression "Upgrading Searx..."
 
 _searx_venv_install
 
-ynh_add_config --template="requirements-ynh.txt" --destination="$install_dir/requirements-ynh.txt"
+ynh_config_add --template="requirements-ynh.txt" --destination="$install_dir/requirements-ynh.txt"
 
-ynh_exec_as "$app" "$venvpy" -m pip install --requirement "$install_dir/requirements-ynh.txt" --no-cache-dir
+ynh_exec_as_app "$venvpy" -m pip install --requirement "$install_dir/requirements-ynh.txt" --no-cache-dir
 
 #=================================================
 # CONFIGURE SEARX
 #=================================================
-# ynh_script_progression --message="Configuring Searx..." --weight=2
+# ynh_script_progression "Configuring Searx..."
 
 # secret_key=$(ynh_string_random)
-# ynh_add_config --template="settings.yml" --destination="$install_dir/source/searx/settings.yml"
+# ynh_config_add --template="settings.yml" --destination="$install_dir/source/searx/settings.yml"
 
 #=================================================
 # CONFIGURE UWSGI FOR SEARX
 #=================================================
-ynh_script_progression --message="Reconfiguring uWSGI for Searx..." --weight=2
+ynh_script_progression "Reconfiguring uWSGI for Searx..."
 
 # Clean old files
-ynh_secure_remove --file="/etc/uwsgi/apps-enabled/$app.ini"
-ynh_secure_remove --file="/etc/uwsgi/apps-available/$app.ini"
+ynh_safe_rm "/etc/uwsgi/apps-enabled/$app.ini"
+ynh_safe_rm "/etc/uwsgi/apps-available/$app.ini"
 ynh_add_uwsgi_service
 
 #=================================================
-# GENERIC FINALISATION
-#=================================================
 # START SYSTEMD SERVICE
 #=================================================
-ynh_script_progression --message="Starting a systemd service..." --weight=3
+ynh_script_progression "Starting $app's systemd service..."
 
 # Wait for searx to be fully started
-ynh_systemd_action --service_name="uwsgi-app@$app.service" --action=restart --line_match="spawned uWSGI master process" --log_path="/var/log/uwsgi/$app/$app.log"
+ynh_systemctl --service="uwsgi-app@$app.service" --action=restart --wait_until="spawned uWSGI master process" --log_path="/var/log/uwsgi/$app/$app.log"
 
 #=================================================
 # END OF SCRIPT
 #=================================================
 
-ynh_script_progression --message="Upgrade of $app completed" --last
+ynh_script_progression "Upgrade of $app completed"
